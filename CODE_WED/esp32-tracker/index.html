@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hệ thống Cảnh báo SOS</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background-color: #f9f9f9; }
+    .alert-box {
+      background-color: red;
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      font-size: 18px;
+      display: none;
+      margin-bottom: 20px;
+    }
+    a.sos-link {
+      display: block;
+      margin: 10px 0;
+      font-size: 18px;
+      color: blue;
+      text-decoration: underline;
+      display: none;
+    }
+    .info-box {
+      margin-bottom: 15px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #ddd;
+    }
+    #recentData {
+      margin-top: 20px;
+      background: #eee;
+      padding: 10px;
+      border-radius: 8px;
+      display: none;
+    }
+    .data-item {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🆘 Hệ thống Cảnh báo SOS</h2>
+
+  <div id="alertBox" class="alert-box">
+    ⚠️ Cảnh báo SOS! Đã nhận tín hiệu từ thiết bị.
+  </div>
+
+  <div class="info-box">
+    <a id="mapLink" class="sos-link" href="#" target="_blank">📍 Xem vị trí trên bản đồ</a>
+    <div id="timeInfo" style="font-size: 16px; display: none;">🕒 Thời gian nhận: <span id="timestamp"></span></div>
+  </div>
+
+  <audio id="alarmSound" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3" preload="auto"></audio>
+
+  <button id="homeBtn">🏠 Trang chủ</button>
+  <button id="toggleAlertsBtn">🔕 Tắt cảnh báo</button>
+  <button id="showRecentBtn">📄 Xem dữ liệu gần đây</button>
+
+  <div id="recentData">
+    <h3>📌 5 vị trí và thời gian gần nhất:</h3>
+    <div id="dataList"></div
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyABKJY2XmLSRUuSnuPE6IkwCgfh2g14Mr8",
+      authDomain: "e32-tracker.firebaseapp.com",
+      databaseURL: "https://e32-tracker-default-rtdb.firebaseio.com",
+      projectId: "e32-tracker",
+      storageBucket: "e32-tracker.firebasestorage.app",
+      messagingSenderId: "450514486277",
+      appId: "1:450514486277:web:795692057c4e054477886c",
+      measurementId: "G-XW1B5TNWJR"
+    };
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+
+      const alertBox = document.getElementById("alertBox");
+      const mapLink = document.getElementById("mapLink");
+      const alarmSound = document.getElementById("alarmSound");
+      const homeBtn = document.getElementById("homeBtn");
+      const toggleBtn = document.getElementById("toggleAlertsBtn");
+      const showRecentBtn = document.getElementById("showRecentBtn");
+      const timestampText = document.getElementById("timestamp");
+      const timeInfo = document.getElementById("timeInfo");
+      const dataList = document.getElementById("dataList");
+      const recentData = document.getElementById("recentData");
+
+      let alertEnabled = true;
+      let initialized = false;
+
+      toggleBtn.addEventListener("click", () => {
+        alertEnabled = !alertEnabled;
+        if (!alertEnabled) {
+          alertBox.style.display = "none";
+          mapLink.style.display = "none";
+          timeInfo.style.display = "none";
+          alarmSound.pause();
+          alarmSound.currentTime = 0;
+          toggleBtn.textContent = "🔔 Bật cảnh báo";
+        } else {
+          toggleBtn.textContent = "🔕 Tắt cảnh báo";
+        }
+      });
+
+      homeBtn.addEventListener("click", () => {
+        alertBox.style.display = "none";
+        mapLink.style.display = "none";
+        timeInfo.style.display = "none";
+        recentData.style.display = "none";
+        dataList.innerHTML = "";
+        showRecentBtn.textContent = "📄 Xem dữ liệu gần đây"; // 👈 reset lại text nút
+        alarmSound.pause();
+        alarmSound.currentTime = 0;
+      });
+
+      mapLink.addEventListener("click", () => {
+        alertBox.style.display = "none";
+        alarmSound.pause();
+        alarmSound.currentTime = 0;
+      });
+
+      showRecentBtn.addEventListener("click", () => {
+      if (recentData.style.display === "block") {
+        recentData.style.display = "none";
+        dataList.innerHTML = "";
+        showRecentBtn.textContent = "📄 Xem dữ liệu gần đây";
+      } else {
+        dataList.innerHTML = "";
+        let sosLog = JSON.parse(localStorage.getItem("sosLog") || "[]");
+
+        const items = sosLog
+          .reverse()
+          .map((entry) => {
+            const time = new Date(entry.time).toLocaleString();
+            return `<div class="data-item">📍 <a href="${entry.url}" target="_blank">${entry.url}</a><br>🕒 ${time}</div>`;
+          });
+
+        dataList.innerHTML = items.join("");
+        recentData.style.display = "block";
+        showRecentBtn.textContent = "📄 Ẩn dữ liệu gần đây";
+      }
+    });
+
+      // Nhận dữ liệu mới theo thời gian thực
+      db.ref("/sos").limitToLast(1).on("child_added", (snapshot) => {
+        const data = snapshot.val();
+        if (!data.message) return;
+
+        const regex = /(https:\/\/www\.google\.com\/maps\?q=[^ ]+)/;
+        const match = data.message.match(regex);
+
+        if (match) {
+          const mapUrl = match[1];
+
+          if (alertEnabled && initialized) {
+            alertBox.style.display = "block";
+            mapLink.style.display = "block";
+            timeInfo.style.display = "block";
+
+            mapLink.href = mapUrl;
+            mapLink.textContent = "📍 Xem vị trí trên bản đồ";
+
+            const now = new Date();
+            timestampText.textContent = now.toLocaleString();
+            // Lưu thời gian và link vào localStorage
+            let sosLog = JSON.parse(localStorage.getItem("sosLog") || "[]");
+            sosLog.push({
+              url: mapUrl,
+              time: now.toISOString()  // lưu dạng ISO
+            });
+            if (sosLog.length > 5) sosLog = sosLog.slice(-5);  // chỉ giữ 5 cái gần nhất
+            localStorage.setItem("sosLog", JSON.stringify(sosLog));
+            alarmSound.play().catch((e) => {
+              console.warn("Không thể phát âm thanh:", e);
+            });
+          }
+        }
+
+        if (!initialized) initialized = true;
+      });
+    } catch (error) {
+      console.error("Lỗi kết nối Firebase:", error);
+    }
+  </script>
+  
+</body>
+</html>
